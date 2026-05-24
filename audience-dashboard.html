@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Smart Home Rendang — Live Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg:          #0A1628;
+  --surface:     #0F1E38;
+  --surface2:    #162540;
+  --surface3:    #1C2E4A;
+  --border:      rgba(255,255,255,0.06);
+  --border2:     rgba(255,255,255,0.11);
+  --yellow:      #F5C300;
+  --yellow-dim:  rgba(245,195,0,0.10);
+  --yellow-glow: rgba(245,195,0,0.22);
+  --red:         #E63946;
+  --red-dim:     rgba(230,57,70,0.13);
+  --green:       #2DC653;
+  --green-dim:   rgba(45,198,83,0.12);
+  --blue:        #1A73E8;
+  --blue-dim:    rgba(26,115,232,0.13);
+  --text:        #EEF2FF;
+  --text-muted:  #6B7FA3;
+  --text-dim:    #2E4060;
+  --font-d:      'Syne', sans-serif;
+  --font-m:      'DM Mono', monospace;
+  --topbar-h:    54px;
+  --r:           12px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-d);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── BACKGROUND GRID ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(245,195,0,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245,195,0,0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--topbar-h);
+  background: rgba(10,22,40,0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 200;
+}
+
+.brand {
+  display: flex; align-items: center; gap: 10px;
+}
+.brand-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--yellow);
+  box-shadow: 0 0 10px var(--yellow-glow);
+  animation: pulse 2.5s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.85)} }
+
+.brand-text {
+  font-family: var(--font-d);
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+.brand-text em { font-style: normal; color: var(--text-muted); font-weight: 400; }
+
+.topbar-right {
+  display: flex; align-items: center; gap: 12px;
+}
+
+.live-pill {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--red-dim);
+  border: 1px solid rgba(230,57,70,0.25);
+  color: var(--red);
+}
+.live-pill i {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  display: block;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.clock-display {
+  font-family: var(--font-m);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+
+/* ── MQTT status dot ── */
+.mqtt-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background .4s, box-shadow .4s;
+}
+.mqtt-dot.on  { background: var(--green); box-shadow: 0 0 8px rgba(45,198,83,.5); }
+.mqtt-dot.err { background: var(--red); }
+
+/* ── PAGE ── */
+.page {
+  position: relative;
+  z-index: 1;
+  padding-top: calc(var(--topbar-h) + 24px);
+  padding-bottom: 60px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* ── HERO ROW ── */
+.hero-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 32px;
+  opacity: 0;
+  animation: slideup .6s .05s ease forwards;
+}
+@keyframes slideup { to { opacity:1; transform:translateY(0) } from { opacity:0; transform:translateY(16px) } }
+
+.hero-eyebrow {
+  font-family: var(--font-m);
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  color: var(--yellow);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.hero-title {
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+.hero-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* ── TEMP HERO CARD ── */
+.temp-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 20px 24px;
+  text-align: center;
+  min-width: 130px;
+  position: relative;
+  overflow: hidden;
+}
+.temp-hero::before {
+  content: '';
+  position: absolute;
+  bottom: -20px; right: -20px;
+  width: 90px; height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--yellow-glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+.temp-label {
+  font-family: var(--font-m);
+  font-size: 0.55rem;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.temp-value {
+  font-family: var(--font-m);
+  font-size: 2rem;
+  font-weight: 500;
+  color: var(--yellow);
+  line-height: 1;
+}
+.temp-value small { font-size: .9rem; opacity: .7; }
+.temp-status {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+  letter-spacing: 0.08em;
+}
+
+/* ── STATS ROW ── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+  opacity: 0;
+  animation: slideup .6s .15s ease forwards;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+.stat-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent, var(--yellow));
+  opacity: 0;
+  transition: opacity .3s;
+}
+.stat-card.active::after { opacity: 1; }
+.stat-card.active { border-color: var(--accent, var(--yellow)); }
+
+.stat-lbl {
+  font-family: var(--font-m);
+  font-size: 0.55rem;
+  letter-spacing: 0.16em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.stat-val {
+  font-family: var(--font-m);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1;
+  transition: color .3s;
+}
+.stat-val.on  { color: var(--yellow); }
+.stat-val.off { color: var(--text-dim); }
+.stat-sub {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* ── MAIN GRID ── */
+.main-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 14px;
+  opacity: 0;
+  animation: slideup .6s .25s ease forwards;
+}
+
+/* ── PANEL ── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.panel-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.panel-title {
+  font-family: var(--font-m);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.panel-badge {
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.badge-yellow { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(245,195,0,.2); }
+.badge-green  { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(45,198,83,.2); }
+.badge-red    { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(230,57,70,.2); }
+.badge-blue   { background: var(--blue-dim);   color: #6AABFF;       border: 1px solid rgba(26,115,232,.2); }
+.badge-dim    { background: var(--surface2);   color: var(--text-muted); border: 1px solid var(--border2); }
+
+/* ── LIGHTING PANEL (left) ── */
+.lights-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.light-row {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color .25s, background .25s;
+  position: relative;
+  overflow: hidden;
+}
+
+.light-row::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--yellow);
+  opacity: 0;
+  transition: opacity .3s;
+}
+
+.light-row.on {
+  border-color: rgba(245,195,0,.2);
+  background: rgba(245,195,0,.04);
+}
+.light-row.on::before { opacity: 1; }
+
+.room-info {}
+.room-icon {
+  font-size: 1.1rem;
+  display: block;
+  margin-bottom: 2px;
+  filter: grayscale(1);
+  transition: filter .3s;
+}
+.light-row.on .room-icon { filter: none; }
+
+.room-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: color .3s;
+}
+.light-row.on .room-name { color: var(--text); }
+
+/* brightness bar */
+.brightness-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bright-bar-bg {
+  height: 4px;
+  background: var(--border2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.bright-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--yellow);
+  width: 0%;
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 0 6px rgba(245,195,0,.4);
+}
+.bright-labels {
+  display: flex;
+  justify-content: space-between;
+}
+.bright-pct {
+  font-family: var(--font-m);
+  font-size: 0.62rem;
+  color: var(--yellow);
+  transition: color .3s;
+}
+.bright-raw {
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  color: var(--text-dim);
+}
+
+.light-status-pill {
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: all .3s;
+}
+.light-row.on  .light-status-pill { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(245,195,0,.2); }
+.light-row.off .light-status-pill { background: var(--surface3);   color: var(--text-dim); border: 1px solid var(--border); }
+
+/* ── COMBINED BRIGHTNESS VISUAL ── */
+.bright-total-wrap {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.bright-total-label {
+  font-family: var(--font-m);
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.bright-total-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.bright-total-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--yellow) 0%, #FFE566 100%);
+  border-radius: 99px;
+  width: 0%;
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+}
+.bright-total-val {
+  font-family: var(--font-m);
+  font-size: 0.65rem;
+  color: var(--yellow);
+  min-width: 32px;
+  text-align: right;
+}
+
+/* ── RIGHT COLUMN ── */
+.right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── GATE PANEL ── */
+.gate-body {
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.gate-visual {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 2px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  position: relative;
+  transition: border-color .4s, background .4s, box-shadow .4s;
+}
+.gate-visual.open {
+  border-color: var(--green);
+  background: var(--green-dim);
+  box-shadow: 0 0 24px rgba(45,198,83,.2);
+}
+.gate-visual.closed {
+  border-color: var(--red);
+  background: var(--red-dim);
+  box-shadow: 0 0 24px rgba(230,57,70,.15);
+}
+.gate-visual.moving {
+  border-color: var(--yellow);
+  background: var(--yellow-dim);
+  box-shadow: 0 0 24px var(--yellow-glow);
+  animation: spin-border 1s linear infinite;
+}
+@keyframes spin-border {
+  0%   { box-shadow: 0  0 24px var(--yellow-glow); }
+  50%  { box-shadow: 0  0 40px var(--yellow-glow); }
+  100% { box-shadow: 0  0 24px var(--yellow-glow); }
+}
+
+.gate-state-text {
+  font-family: var(--font-m);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  transition: color .4s;
+}
+.gate-state-text.open    { color: var(--green); }
+.gate-state-text.closed  { color: var(--red); }
+.gate-state-text.moving  { color: var(--yellow); }
+
+.gate-last {
+  font-family: var(--font-m);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ── ACTIVITY LOG ── */
+.log-body {
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.log-body::-webkit-scrollbar { display: none; }
+
+.log-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  animation: faderow .3s ease;
+}
+@keyframes faderow { from { opacity:0; transform:translateX(-8px) } to { opacity:1; transform:none } }
+.log-item:last-child { border-bottom: none; }
+
+.log-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.log-msg {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.log-msg strong { color: var(--text); font-weight: 700; }
+.log-time {
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* ── SYSTEM STATUS ── */
+.status-body {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--surface2);
+  border-radius: 6px;
+  font-size: 0.72rem;
+}
+.status-key { color: var(--text-muted); font-size: 0.68rem; }
+.status-val {
+  font-family: var(--font-m);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  transition: color .3s;
+}
+.status-val.ok  { color: var(--green); }
+.status-val.warn{ color: var(--yellow); }
+.status-val.err { color: var(--red); }
+
+/* ── FOOTER ── */
+.page-footer {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  opacity: 0;
+  animation: slideup .6s .4s ease forwards;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 700px) {
+  .stats-row { grid-template-columns: 1fr 1fr; }
+  .main-grid { grid-template-columns: 1fr; }
+  .hero-row  { grid-template-columns: 1fr; }
+  .temp-hero { display: none; }
+  .light-row { grid-template-columns: 64px 1fr auto; gap: 10px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══ TOPBAR ══ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-dot"></div>
+    <div class="brand-text">RENDANG / <em>LIVE MONITOR</em></div>
+  </div>
+  <div class="topbar-right">
+    <div class="live-pill"><i></i> LIVE</div>
+    <div class="clock-display" id="clock">--:--:--</div>
+    <div class="mqtt-dot" id="mqtt-dot" title="MQTT status"></div>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- ── HERO ROW ── -->
+  <div class="hero-row">
+    <div>
+      <div class="hero-eyebrow">// Smart Home System</div>
+      <div class="hero-title">Rumah Rendang</div>
+      <div class="hero-sub">Monitor real-time — pencahayaan, gerbang, dan kondisi ruangan via MQTT.</div>
+    </div>
+    <div class="temp-hero">
+      <div class="temp-label">Temperatur</div>
+      <div class="temp-value" id="temp-big">--<small>°C</small></div>
+      <div class="temp-status" id="temp-feel">Menunggu data...</div>
+    </div>
+  </div>
+
+  <!-- ── STATS ROW ── -->
+  <div class="stats-row">
+    <div class="stat-card" id="sc-lampu" style="--accent: var(--yellow)">
+      <div class="stat-lbl">Lampu Aktif</div>
+      <div class="stat-val" id="sc-lampu-val">0</div>
+      <div class="stat-sub">dari 4 ruangan</div>
+    </div>
+    <div class="stat-card" id="sc-gate" style="--accent: var(--green)">
+      <div class="stat-lbl">Gerbang</div>
+      <div class="stat-val off" id="sc-gate-val">—</div>
+      <div class="stat-sub" id="sc-gate-sub">menunggu data</div>
+    </div>
+    <div class="stat-card" id="sc-temp" style="--accent: var(--blue)">
+      <div class="stat-lbl">Suhu Ruangan</div>
+      <div class="stat-val" id="sc-temp-val">--</div>
+      <div class="stat-sub">°C · DHT22</div>
+    </div>
+    <div class="stat-card" id="sc-bright" style="--accent: var(--yellow)">
+      <div class="stat-lbl">Rata Kecerahan</div>
+      <div class="stat-val" id="sc-bright-val">0</div>
+      <div class="stat-sub">dari 255 maks</div>
+    </div>
+  </div>
+
+  <!-- ── MAIN GRID ── -->
+  <div class="main-grid">
+
+    <!-- LEFT: LIGHTING PANEL -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">// Pencahayaan</span>
+        <span class="panel-badge badge-yellow" id="lights-badge">0 / 4 ON</span>
+      </div>
+
+      <div class="lights-body">
+
+        <div class="light-row off" id="row-teras">
+          <div class="room-info">
+            <span class="room-icon">🏠</span>
+            <span class="room-name">Teras</span>
+          </div>
+          <div class="brightness-wrap">
+            <div class="bright-bar-bg">
+              <div class="bright-bar-fill" id="bar-teras" style="width:0%"></div>
+            </div>
+            <div class="bright-labels">
+              <span class="bright-pct" id="pct-teras">0%</span>
+              <span class="bright-raw" id="raw-teras">0 / 255</span>
+            </div>
+          </div>
+          <span class="light-status-pill" id="pill-teras">OFF</span>
+        </div>
+
+        <div class="light-row off" id="row-tamu">
+          <div class="room-info">
+            <span class="room-icon">🛋</span>
+            <span class="room-name">R. Tamu</span>
+          </div>
+          <div class="brightness-wrap">
+            <div class="bright-bar-bg">
+              <div class="bright-bar-fill" id="bar-tamu" style="width:0%"></div>
+            </div>
+            <div class="bright-labels">
+              <span class="bright-pct" id="pct-tamu">0%</span>
+              <span class="bright-raw" id="raw-tamu">0 / 255</span>
+            </div>
+          </div>
+          <span class="light-status-pill" id="pill-tamu">OFF</span>
+        </div>
+
+        <div class="light-row off" id="row-tidur">
+          <div class="room-info">
+            <span class="room-icon">🛏</span>
+            <span class="room-name">K. Tidur</span>
+          </div>
+          <div class="brightness-wrap">
+            <div class="bright-bar-bg">
+              <div class="bright-bar-fill" id="bar-tidur" style="width:0%"></div>
+            </div>
+            <div class="bright-labels">
+              <span class="bright-pct" id="pct-tidur">0%</span>
+              <span class="bright-raw" id="raw-tidur">0 / 255</span>
+            </div>
+          </div>
+          <span class="light-status-pill" id="pill-tidur">OFF</span>
+        </div>
+
+        <div class="light-row off" id="row-dapur">
+          <div class="room-info">
+            <span class="room-icon">🍳</span>
+            <span class="room-name">Dapur</span>
+          </div>
+          <div class="brightness-wrap">
+            <div class="bright-bar-bg">
+              <div class="bright-bar-fill" id="bar-dapur" style="width:0%"></div>
+            </div>
+            <div class="bright-labels">
+              <span class="bright-pct" id="pct-dapur">0%</span>
+              <span class="bright-raw" id="raw-dapur">0 / 255</span>
+            </div>
+          </div>
+          <span class="light-status-pill" id="pill-dapur">OFF</span>
+        </div>
+
+      </div>
+
+      <!-- total brightness bar -->
+      <div class="bright-total-wrap">
+        <span class="bright-total-label">Total Kecerahan</span>
+        <div class="bright-total-bar">
+          <div class="bright-total-fill" id="bar-total"></div>
+        </div>
+        <span class="bright-total-val" id="val-total">0%</span>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- GATE STATUS -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">// Gerbang</span>
+          <span class="panel-badge badge-dim" id="gate-badge">STANDBY</span>
+        </div>
+        <div class="gate-body">
+          <div class="gate-visual" id="gate-visual">🔒</div>
+          <div class="gate-state-text" id="gate-state">MENUNGGU DATA</div>
+          <div class="gate-last" id="gate-last">Belum ada aktivitas</div>
+        </div>
+      </div>
+
+      <!-- ACTIVITY LOG -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">// Log Aktivitas</span>
+          <span class="panel-badge badge-dim" id="log-count">0 event</span>
+        </div>
+        <div class="log-body" id="log-body">
+          <div class="log-item">
+            <div class="log-dot" style="background:var(--text-dim)"></div>
+            <div class="log-msg">Menunggu koneksi MQTT...</div>
+            <div class="log-time">--:--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SYSTEM STATUS -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">// System</span>
+          <span class="panel-badge badge-dim" id="sys-badge">OFFLINE</span>
+        </div>
+        <div class="status-body">
+          <div class="status-row">
+            <span class="status-key">MQTT Broker</span>
+            <span class="status-val" id="sys-mqtt">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Koneksi</span>
+            <span class="status-val" id="sys-conn">Offline</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Pesan Diterima</span>
+            <span class="status-val" id="sys-msgs">0</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Uptime</span>
+            <span class="status-val" id="sys-uptime">—</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>RENDANG / SMARTHOME · READ-ONLY MONITOR</span>
+    <span>MQTT @ broker.emqx.io:8084 · WSS</span>
+  </div>
+
+</div><!-- /page -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+<script>
+// ─── CONFIG ───────────────────────────────
+const CFG = {
+  broker:   "broker.emqx.io",
+  port:     8084,
+  clientId: "Monitor-" + Math.floor(Math.random() * 1e7),
+  topics: {
+    suhu:    "proyekiot/sensor/suhu",
+    ipcam:   "proyekiot/ipcam",
+    gerbang: "proyekiot/gerbang",
+    lampu:   "proyekiot/lampu/",
+  }
+};
+const ROOMS = ["teras","tamu","tidur","dapur"];
+
+// ─── STATE ────────────────────────────────
+const state = {
+  lampu:    { teras:0, tamu:0, tidur:0, dapur:0 },
+  gate:     "STANDBY",
+  suhu:     null,
+  msgCount: 0,
+  connectedAt: null,
+  logCount: 0,
+};
+
+// ─── CLOCK ────────────────────────────────
+function tick() {
+  const now = new Date();
+  document.getElementById("clock").textContent = now.toTimeString().slice(0,8);
+
+  if (state.connectedAt) {
+    const s = Math.floor((Date.now() - state.connectedAt) / 1000);
+    const hh = String(Math.floor(s/3600)).padStart(2,"0");
+    const mm = String(Math.floor((s%3600)/60)).padStart(2,"0");
+    const ss = String(s%60).padStart(2,"0");
+    document.getElementById("sys-uptime").textContent = `${hh}:${mm}:${ss}`;
+  }
+}
+setInterval(tick, 1000); tick();
+
+// ─── LOGGING ──────────────────────────────
+function addLog(msg, color) {
+  state.logCount++;
+  const box  = document.getElementById("log-body");
+  const time = new Date().toTimeString().slice(0,5);
+
+  // Remove placeholder on first real log
+  if (state.logCount === 1) box.innerHTML = "";
+
+  const item = document.createElement("div");
+  item.className = "log-item";
+  item.innerHTML = `
+    <div class="log-dot" style="background:${color}"></div>
+    <div class="log-msg">${msg}</div>
+    <div class="log-time">${time}</div>
+  `;
+  box.insertBefore(item, box.firstChild);
+
+  // Keep max 30 entries
+  while (box.children.length > 30) box.removeChild(box.lastChild);
+
+  document.getElementById("log-count").textContent =
+    `${Math.min(state.logCount, 30)} event`;
+}
+
+// ─── LIGHT UI ─────────────────────────────
+function updateLight(room, val) {
+  const pct  = Math.round((val / 255) * 100);
+  const row  = document.getElementById(`row-${room}`);
+  const bar  = document.getElementById(`bar-${room}`);
+  const pctEl= document.getElementById(`pct-${room}`);
+  const rawEl= document.getElementById(`raw-${room}`);
+  const pill = document.getElementById(`pill-${room}`);
+
+  bar.style.width  = pct + "%";
+  pctEl.textContent= pct + "%";
+  rawEl.textContent= `${val} / 255`;
+
+  if (val > 0) {
+    row.className  = "light-row on";
+    pill.textContent = "ON";
+  } else {
+    row.className  = "light-row off";
+    pill.textContent = "OFF";
+  }
+
+  // Update stats
+  updateStats();
+}
+
+function updateStats() {
+  const vals   = Object.values(state.lampu);
+  const onCount= vals.filter(v => v > 0).length;
+  const avgBri = Math.round(vals.reduce((a,b)=>a+b,0) / 4);
+  const totalPct = Math.round((vals.reduce((a,b)=>a+b,0) / (255*4)) * 100);
+
+  document.getElementById("sc-lampu-val").textContent = onCount;
+  document.getElementById("lights-badge").textContent = `${onCount} / 4 ON`;
+  document.getElementById("sc-bright-val").textContent = avgBri;
+  document.getElementById("bar-total").style.width = totalPct + "%";
+  document.getElementById("val-total").textContent = totalPct + "%";
+
+  const sc = document.getElementById("sc-lampu");
+  sc.classList.toggle("active", onCount > 0);
+  const scb = document.getElementById("sc-bright");
+  scb.classList.toggle("active", avgBri > 0);
+
+  // Badge colour
+  const lb = document.getElementById("lights-badge");
+  lb.className = onCount > 0 ? "panel-badge badge-yellow" : "panel-badge badge-dim";
+}
+
+// ─── GATE UI ──────────────────────────────
+const GATE_EMO = { open:"🔓", closed:"🔒", moving:"⚙" };
+
+function updateGate(cmd) {
+  const isOpen = cmd === "BUKA";
+  const vis    = document.getElementById("gate-visual");
+  const statEl = document.getElementById("gate-state");
+  const badge  = document.getElementById("gate-badge");
+  const sc     = document.getElementById("sc-gate-val");
+  const scsub  = document.getElementById("sc-gate-sub");
+  const scCard = document.getElementById("sc-gate");
+  const lastEl = document.getElementById("gate-last");
+
+  // Animate as "moving" for 3s then settle
+  vis.className   = "gate-visual moving";
+  vis.textContent = GATE_EMO.moving;
+  statEl.className = "gate-state-text moving";
+  statEl.textContent = isOpen ? "MEMBUKA..." : "MENUTUP...";
+  badge.className = "panel-badge badge-yellow";
+  badge.textContent = "BERGERAK";
+
+  setTimeout(() => {
+    if (isOpen) {
+      vis.className    = "gate-visual open";
+      vis.textContent  = GATE_EMO.open;
+      statEl.className = "gate-state-text open";
+      statEl.textContent = "TERBUKA";
+      badge.className  = "panel-badge badge-green";
+      badge.textContent = "OPEN";
+      sc.className = "stat-val on";
+      sc.textContent = "BUKA";
+      scCard.classList.add("active");
+      scCard.style.setProperty("--accent","var(--green)");
+    } else {
+      vis.className    = "gate-visual closed";
+      vis.textContent  = GATE_EMO.closed;
+      statEl.className = "gate-state-text closed";
+      statEl.textContent = "TERTUTUP";
+      badge.className  = "panel-badge badge-red";
+      badge.textContent = "CLOSED";
+      sc.className = "stat-val off";
+      sc.textContent = "TUTUP";
+      scCard.classList.add("active");
+      scCard.style.setProperty("--accent","var(--red)");
+    }
+    scsub.textContent = "terakhir diperbarui";
+    lastEl.textContent = "Terakhir: " + new Date().toLocaleTimeString("id-ID");
+  }, 3000);
+}
+
+// ─── TEMP UI ──────────────────────────────
+function updateTemp(val) {
+  const t = parseFloat(val);
+  document.getElementById("temp-big").innerHTML = `${t.toFixed(1)}<small>°C</small>`;
+  document.getElementById("sc-temp-val").textContent = t.toFixed(1);
+
+  let feel = "Normal";
+  if (t < 20)      feel = "Dingin";
+  else if (t < 26) feel = "Sejuk";
+  else if (t < 30) feel = "Normal";
+  else if (t < 34) feel = "Hangat";
+  else              feel = "Panas";
+  document.getElementById("temp-feel").textContent = feel;
+
+  const sc = document.getElementById("sc-temp");
+  sc.classList.add("active");
+}
+
+// ─── MQTT ────────────────────────────────
+const dot = document.getElementById("mqtt-dot");
+const client = new Paho.MQTT.Client(CFG.broker, CFG.port, CFG.clientId);
+
+client.onConnectionLost = (err) => {
+  dot.className = "mqtt-dot err";
+  document.getElementById("sys-conn").className = "status-val err";
+  document.getElementById("sys-conn").textContent = "Terputus";
+  document.getElementById("sys-badge").textContent = "OFFLINE";
+  document.getElementById("sys-badge").className = "panel-badge badge-red";
+  addLog("Koneksi MQTT terputus — mencoba ulang...", "var(--red)");
+  setTimeout(connect, 5000);
+};
+
+client.onMessageArrived = (msg) => {
+  const { destinationName: topic, payloadString: payload } = msg;
+  state.msgCount++;
+  document.getElementById("sys-msgs").textContent = state.msgCount;
+
+  if (topic === CFG.topics.suhu) {
+    updateTemp(payload);
+    addLog(`Suhu diperbarui: <strong>${parseFloat(payload).toFixed(1)}°C</strong>`, "var(--blue)");
+    return;
+  }
+
+  if (topic === CFG.topics.ipcam) {
+    addLog(`ESP32-CAM online: <strong>${payload}</strong>`, "var(--green)");
+    return;
+  }
+
+  if (topic === CFG.topics.gerbang) {
+    const cmd = payload.trim();
+    updateGate(cmd);
+    addLog(
+      cmd === "BUKA"
+        ? "Gerbang <strong>DIBUKA</strong>"
+        : "Gerbang <strong>DITUTUP</strong>",
+      cmd === "BUKA" ? "var(--green)" : "var(--red)"
+    );
+    return;
+  }
+
+  ROOMS.forEach(room => {
+    if (topic === CFG.topics.lampu + room) {
+      const val = parseInt(payload) || 0;
+      const old = state.lampu[room];
+      state.lampu[room] = val;
+      updateLight(room, val);
+
+      if (old !== val) {
+        const pct = Math.round((val/255)*100);
+        const label = { teras:"Teras", tamu:"R. Tamu", tidur:"K. Tidur", dapur:"Dapur" }[room];
+        addLog(
+          val > 0
+            ? `${label} <strong>ON</strong> — ${pct}%`
+            : `${label} <strong>OFF</strong>`,
+          val > 0 ? "var(--yellow)" : "var(--text-dim)"
+        );
+      }
+    }
+  });
+};
+
+function connect() {
+  document.getElementById("sys-conn").textContent = "Menghubungkan...";
+  document.getElementById("sys-conn").className = "status-val warn";
+  document.getElementById("sys-mqtt").textContent = CFG.broker;
+
+  client.connect({
+    useSSL: true,
+    timeout: 6,
+    onSuccess: () => {
+      dot.className = "mqtt-dot on";
+      state.connectedAt = Date.now();
+
+      document.getElementById("sys-conn").textContent = "Terhubung";
+      document.getElementById("sys-conn").className = "status-val ok";
+      document.getElementById("sys-badge").textContent = "ONLINE";
+      document.getElementById("sys-badge").className = "panel-badge badge-green";
+
+      // Subscribe all
+      client.subscribe(CFG.topics.suhu);
+      client.subscribe(CFG.topics.ipcam);
+      client.subscribe(CFG.topics.gerbang);
+      ROOMS.forEach(r => client.subscribe(CFG.topics.lampu + r));
+
+      addLog("Terhubung ke MQTT broker — menerima data...", "var(--green)");
+    },
+    onFailure: (err) => {
+      dot.className = "mqtt-dot err";
+      document.getElementById("sys-conn").textContent = "Gagal";
+      document.getElementById("sys-conn").className = "status-val err";
+      addLog("Gagal konek MQTT — coba lagi 5 detik", "var(--red)");
+      setTimeout(connect, 5000);
+    }
+  });
+}
+
+connect();
+</script>
+</body>
+</html>
